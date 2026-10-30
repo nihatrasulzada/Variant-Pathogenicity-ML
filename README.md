@@ -1,46 +1,62 @@
-# Genetik Variantların ML ilə Təsnifatı və Zərərli Mutasiyaların Proqnozlaşdırılması
+# 🧬 Machine Learning Classification of Genetic Variants and Prediction of Pathogenic Mutations
 
-Missense variantları ClinVar etiketləri əsasında **Pathogenic (1) / Benign (0)** kimi təsnif edən
-Random Forest və XGBoost pipeline-ı.
+A Random Forest and XGBoost pipeline that classifies missense variants as
+**Pathogenic (1) / Benign (0)** based on ClinVar labels.
 
-## Layihə strukturu
+## Project Structure
 
 ```
 variant-pathogenicity-ml/
-├── main.py                  # Uçdan-uca pipeline (4 addım)
+├── main.py                  # End-to-end pipeline (4 steps)
+├── interactive.py           # Type a mutation and get an instant prediction
 ├── requirements.txt
 ├── variant_ml/
-│   ├── config.py            # Yollar, AA xassələri, BLOSUM62, domen cədvəli
-│   ├── data_loader.py       # ADDIM 1: ClinVar yükləmə / mock data, SNV+missense+etiket filtri
-│   ├── features.py          # ADDIM 2: AA xüsusiyyətləri, skorlar, domen bayrağı
-│   ├── models.py            # ADDIM 3: 80/20 split, RF + XGBoost, RandomizedSearchCV
-│   ├── evaluation.py        # ADDIM 4a: metrikalar, ROC, confusion matrix, feature importance
-│   └── predict.py           # ADDIM 4b: predict_variant_impact()
-├── data/                    # ClinVar faylı və emal olunmuş CSV (avtomatik yaranır)
-├── models/                  # Saxlanmış modellər (.joblib)
-└── outputs/                 # Qrafiklər və metrika CSV-ləri
+│   ├── config.py            # Paths, amino acid properties, BLOSUM62, domain table
+│   ├── data_loader.py       # STEP 1: ClinVar download / mock data, SNV + missense + label filtering
+│   ├── features.py          # STEP 2: Amino acid features, scores, domain flag
+│   ├── models.py            # STEP 3: 80/20 split, RF + XGBoost, RandomizedSearchCV
+│   ├── evaluation.py        # STEP 4a: Metrics, ROC, confusion matrix, feature importance
+│   └── predict.py           # STEP 4b: predict_variant_impact()
+├── data/                    # ClinVar file and processed CSV (created automatically)
+├── models/                  # Saved models (.joblib)
+└── outputs/                 # Plots and metric CSVs
 ```
 
-## Quraşdırma
+## Installation
 
 ```bash
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## İcra
+## Usage
 
 ```bash
-python main.py --fast                         # ~30 san. sürətli sınaq (sintetik data)
-python main.py                                # tam işləmə (sintetik, 5000 sətir, 20 iterasiya)
-python main.py --source clinvar --download    # real ClinVar-ı NCBI-dən yüklə (~400 MB)
+python main.py --fast                         # ~30 sec quick test (synthetic data)
+python main.py                                # full run (synthetic, 5000 rows, 20 iterations)
+python main.py --source clinvar --download    # download real ClinVar data from NCBI (~400 MB)
 python main.py --source clinvar --clinvar-path data/variant_summary.txt.gz
 python main.py --source clinvar --scores-file data/vep_scores.csv
 ```
 
-ClinVar əlçatan olmasa, kod avtomatik olaraq eyni formatlı sintetik dataya keçir.
+If ClinVar is unavailable, the code automatically falls back to synthetic data in the same format.
 
-## Proqnoz (inference)
+## Interactive Mode
+
+```bash
+python main.py --fast      # train the model first (once)
+python interactive.py      # then check any mutation
+```
+
+```
+Gene name [Enter = TP53]: TP53
+Mutation (e.g. R248W): R248W
+  Pathogenic probability :  99.94%  ██████████████████████████████
+  Prediction             : Pathogenic
+  Protein domain         : DNA-binding domain
+```
+
+## Inference
 
 ```python
 from variant_ml.predict import load_model, predict_variant_impact
@@ -49,21 +65,32 @@ model = load_model()   # models/best_model.joblib
 predict_variant_impact("R248W", gene="TP53", model=model, sift=0.0, polyphen=1.0, cadd=32)
 # {'variant': 'TP53 p.R248W', 'pathogenic_probability': 0.9999, 'prediction': 'Pathogenic', ...}
 
-predict_variant_impact("p.Arg175His", gene="TP53", model=model)   # skorsuz -> median imputasiya
+predict_variant_impact("p.Arg175His", gene="TP53", model=model)   # without scores -> median imputation
 ```
 
-Qəbul olunan formatlar: `R248W`, `p.R248W`, `Arg248Trp`, `p.Arg248Trp`.
+Accepted formats: `R248W`, `p.R248W`, `Arg248Trp`, `p.Arg248Trp`.
 
-## Vacib qeydlər
+## Results (synthetic data)
 
-- **Sintetik nəticələr real performansı göstərmir.** Mock datada SIFT/PolyPhen/CADD etiketdən
-  törədilir, ona görə AUC ≈ 0.997 süni yüksəkdir. Kod düzgünlüyünü yoxlamaq üçündür.
-- **Real ClinVar-da SIFT/PolyPhen/CADD sütunları yoxdur.** Onları Ensembl VEP və ya dbNSFP ilə
-  annotasiya edib `--scores-file` ilə verin (sütunlar: `gene, protein_change, sift_score,
-  polyphen_score, cadd_phred`; `protein_change` formatı `R248W`). Verilməsə, model yalnız
-  amin turşusu və domen xüsusiyyətləri ilə öyrənir.
-- **Domen cədvəli** (`config.FUNCTIONAL_DOMAINS`) təxmini və nümunə xarakterlidir; real iş üçün
-  UniProt / InterPro / Pfam koordinatlarından istifadə edin.
-- **Data sızması:** eyni gendən variantlar həm təlimdə, həm sınaqda ola bilər. Daha sərt
-  qiymətləndirmə üçün gen səviyyəsində bölgü (`GroupKFold`) tövsiyə olunur.
-- Model klinik diaqnoz vasitəsi deyil; tədqiqat və təhsil məqsədlidir.
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC |
+|---|---|---|---|---|---|
+| Random Forest | 0.973 | 0.980 | 0.978 | 0.979 | 0.997 |
+| XGBoost | 0.977 | 0.984 | 0.980 | 0.982 | 0.997 |
+
+![ROC curves](outputs/roc_curves.png)
+![Feature importance](outputs/feature_importance.png)
+
+## Important Notes
+
+- **Synthetic results do not reflect real-world performance.** In the mock data, SIFT/PolyPhen/CADD
+  scores are derived from the labels, so the AUC ≈ 0.997 is artificially high. It is meant for
+  verifying code correctness.
+- **Real ClinVar data does not include SIFT/PolyPhen/CADD columns.** Annotate them with Ensembl VEP
+  or dbNSFP and pass them via `--scores-file` (columns: `gene, protein_change, sift_score,
+  polyphen_score, cadd_phred`; `protein_change` format: `R248W`). If not provided, the model
+  learns only from amino acid and domain features.
+- **The domain table** (`config.FUNCTIONAL_DOMAINS`) is approximate and illustrative; for real work,
+  use UniProt / InterPro / Pfam coordinates.
+- **Data leakage:** variants from the same gene may appear in both training and test sets. For a
+  stricter evaluation, a gene-level split (`GroupKFold`) is recommended.
+- This model is not a clinical diagnostic tool; it is intended for research and educational purposes only.
